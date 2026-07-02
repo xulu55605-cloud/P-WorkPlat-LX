@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>图片 / PDF 角度测量工具</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#1a5ccc">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f5f5f3;
+      color: #1a1a18;
+      min-height: 100vh;
+      padding: 24px 20px 40px;
+    }
+
+    /* ── Author badge ── */
+    .author-badge {
+      position: fixed; top: 16px; right: 20px;
+      font-size: 12px; color: #888; letter-spacing: 0.03em;
+      padding: 5px 12px; border-radius: 20px; border: 1px solid #ddd;
+      background: rgba(255,255,255,0.85); backdrop-filter: blur(6px);
+      transition: color .2s, border-color .2s, background .2s, box-shadow .2s;
+      cursor: default; z-index: 100; user-select: none;
+    }
+    .author-badge:hover {
+      color: #1a5ccc; border-color: #a8c4f5;
+      background: rgba(232,241,255,0.95);
+      box-shadow: 0 2px 12px rgba(59,130,246,0.12);
+    }
+    .author-badge span { font-weight: 500; }
+
+    .page-header { text-align: center; margin-bottom: 24px; }
+    .page-header h1 { font-size: 22px; font-weight: 600; color: #1a1a18; margin-bottom: 4px; }
+    .page-header p { font-size: 13px; color: #888; }
+    .container { max-width: 860px; margin: 0 auto; }
+
+    /* ── Toolbar ── */
+    .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .toolbar button {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 13px; padding: 6px 14px; border-radius: 8px;
+      border: 1px solid #d0d0cc; background: #fff; color: #333;
+      cursor: pointer; transition: background .15s, border-color .15s; font-family: inherit;
+    }
+    .toolbar button:hover { background: #f0f0ee; }
+    .toolbar button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .toolbar button.danger { color: #c0392b; border-color: #f5c2be; }
+    .toolbar button.danger:hover { background: #fff0ee; }
+    .toolbar .sep { width: 1px; height: 24px; background: #e0e0dc; margin: 0 4px; }
+    .zoom-group { display: flex; align-items: center; gap: 4px; }
+    .zoom-group button { padding: 5px 10px; min-width: 30px; justify-content: center; }
+    .zoom-label { font-size: 12px; color: #888; min-width: 40px; text-align: center; }
+
+    .page-nav { display: none; align-items: center; gap: 6px; font-size: 13px; color: #555; }
+    .page-nav button { padding: 5px 10px; }
+    .page-nav span { min-width: 70px; text-align: center; color: #888; }
+
+    /* ── Loading ── */
+    .loading-overlay {
+      display: none; position: absolute; inset: 0;
+      background: rgba(20,20,20,0.7); align-items: center;
+      justify-content: center; flex-direction: column;
+      gap: 12px; color: #fff; font-size: 14px; z-index: 10; border-radius: 10px;
+    }
+    .loading-overlay.show { display: flex; }
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid rgba(255,255,255,0.2); border-top-color: #fff;
+      border-radius: 50%; animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Canvas ── */
+    .canvas-wrap {
+      position: relative; border: 1px solid #d8d8d4; border-radius: 10px;
+      overflow: hidden; background: #1e1e1e; min-height: 360px;
+      display: flex; align-items: center; justify-content: center; cursor: crosshair;
+    }
+    #mainCanvas { display: block; max-width: 100%; }
+    .drop-zone {
+      position: absolute; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 10px;
+      color: #666; pointer-events: none;
+    }
+    .drop-zone i { font-size: 44px; opacity: 0.35; }
+    .drop-zone p { font-size: 15px; }
+    .drop-zone small { font-size: 12px; opacity: 0.6; }
+
+    /* ── Quadrant picker ── */
+    .quad-picker { margin-top: 14px; display: none; flex-direction: column; gap: 8px; }
+    .quad-picker-label { font-size: 12px; color: #888; }
+    .quad-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+    .quad-btn {
+      display: inline-flex; flex-direction: column; align-items: center; gap: 2px;
+      padding: 8px 18px; border-radius: 8px; border: 1.5px solid #d0d0cc;
+      background: #fff; color: #333; cursor: pointer; font-family: inherit;
+      transition: border-color .15s, background .15s, box-shadow .15s; min-width: 84px;
+    }
+    .quad-btn:hover { background: #f5f5f3; border-color: #aaa; }
+    .quad-btn.selected {
+      border-color: #1a5ccc; background: #e8f1ff; color: #1a5ccc;
+      box-shadow: 0 0 0 3px rgba(26,92,204,0.12);
+    }
+    .quad-btn .qdeg { font-size: 18px; font-weight: 700; }
+    .quad-btn .qlabel { font-size: 10px; color: #999; }
+    .quad-btn.selected .qlabel { color: #6699ee; }
+
+    /* ── Results ── */
+    .results-bar { margin-top: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
+    .result-card { background: #fff; border: 1px solid #e0e0dc; border-radius: 8px; padding: 10px 18px; min-width: 130px; }
+    .result-label { font-size: 11px; color: #aaa; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 2px; }
+    .result-value { font-size: 26px; font-weight: 600; color: #1a1a18; line-height: 1.2; }
+    .result-value.accent { color: #1a5ccc; }
+    .result-unit { font-size: 12px; color: #aaa; margin-top: 1px; }
+
+    .hint { font-size: 12px; color: #aaa; margin-top: 10px; line-height: 1.8; }
+    .step-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      background: #e8f1ff; color: #1a5ccc; border-radius: 50%;
+      width: 17px; height: 17px; font-size: 10px; font-weight: 600;
+      margin-right: 3px; vertical-align: middle;
+    }
+    #fileInput { display: none; }
+
+    @media (max-width: 540px) {
+      body { padding: 16px 12px 32px; }
+      .result-value { font-size: 22px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="author-badge">作者：<span>LU Xu</span></div>
+
+<div class="container">
+  <div class="page-header">
+    <h1>图片 / PDF 角度测量工具</h1>
+    <p>上传工程图、示意图或 PDF，点击画线，选择目标角，自动标注</p>
+  </div>
+
+  <input type="file" id="fileInput" accept="image/*,.pdf">
+
+  <div class="toolbar">
+    <button id="uploadBtn"><i class="ti ti-upload"></i> 上传文件</button>
+    <div class="sep"></div>
+    <div class="page-nav" id="pageNav">
+      <button id="prevPageBtn" disabled><i class="ti ti-chevron-left"></i></button>
+      <span id="pageInfo">第 1 / 1 页</span>
+      <button id="nextPageBtn" disabled><i class="ti ti-chevron-right"></i></button>
+      <div class="sep"></div>
+    </div>
+    <button id="clearBtn" class="danger"><i class="ti ti-trash"></i> 清除标注</button>
+    <div class="sep"></div>
+    <div class="zoom-group">
+      <button id="zoomOutBtn">−</button>
+      <span class="zoom-label" id="zoomLabel">100%</span>
+      <button id="zoomInBtn">+</button>
+      <button id="zoomFitBtn">适应</button>
+    </div>
+  </div>
+
+  <div class="canvas-wrap" id="canvasWrap">
+    <canvas id="mainCanvas"></canvas>
+    <div class="drop-zone" id="dropZone">
+      <i class="ti ti-file-search"></i>
+      <p>点击上传或拖拽文件到此处</p>
+      <small>支持 PNG / JPG / BMP / GIF / PDF</small>
+    </div>
+    <div class="loading-overlay" id="loadingOverlay">
+      <div class="spinner"></div>
+      <span id="loadingMsg">正在加载…</span>
+    </div>
+  </div>
+
+  <div class="quad-picker" id="quadPicker">
+    <div class="quad-picker-label">两线延长后共形成 4 个角，请选择要标注的角：</div>
+    <div class="quad-btns" id="quadBtns"></div>
+  </div>
+
+  <div class="results-bar" id="resultsBar" style="display:none;">
+    <div class="result-card">
+      <div class="result-label">已选角度</div>
+      <div class="result-value accent" id="angleVal">—</div>
+      <div class="result-unit">度 (°)</div>
+    </div>
+    <div class="result-card">
+      <div class="result-label">直线 1（蓝）</div>
+      <div class="result-value" id="line1Val">—</div>
+      <div class="result-unit">° 与水平轴</div>
+    </div>
+    <div class="result-card">
+      <div class="result-label">直线 2（黄）</div>
+      <div class="result-value" id="line2Val">—</div>
+      <div class="result-unit">° 与水平轴</div>
+    </div>
+  </div>
+
+  <p class="hint">
+    <span class="step-badge">1</span> 上传图片或 PDF &nbsp;
+    <span class="step-badge">2</span> 点击两次画第一条线（蓝），再点击两次画第二条线（黄） &nbsp;
+    <span class="step-badge">3</span> 选择要标注的角 &nbsp;｜&nbsp;
+    <b>滚轮</b>缩放 &nbsp; <b>Alt+拖拽</b>平移
+  </p>
+</div>
+
+<script type="module">
+import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs';
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs';
+
+const canvas      = document.getElementById('mainCanvas');
+const ctx         = canvas.getContext('2d');
+const wrap        = document.getElementById('canvasWrap');
+const dropZone    = document.getElementById('dropZone');
+const fileInput   = document.getElementById('fileInput');
+const pageNav     = document.getElementById('pageNav');
+const pageInfo    = document.getElementById('pageInfo');
+const prevBtn     = document.getElementById('prevPageBtn');
+const nextBtn     = document.getElementById('nextPageBtn');
+const loadOverlay = document.getElementById('loadingOverlay');
+const loadMsg     = document.getElementById('loadingMsg');
+const quadPicker  = document.getElementById('quadPicker');
+const quadBtns    = document.getElementById('quadBtns');
+
+let img         = null;
+let pdfDoc      = null;
+let pdfPage     = 1;
+let pdfTotal    = 0;
+let zoom        = 1;
+let offset      = { x: 0, y: 0 };
+let panning     = false;
+let panStart    = null;
+let lines       = [];
+let currentLine = null;
+let selectedQuad = null;
+let quadAngles   = null;
+
+function toCanvasCoords(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: (e.clientX-r.left)*(canvas.width/r.width), y: (e.clientY-r.top)*(canvas.height/r.height) };
+}
+function toImgCoords(cx, cy)    { return { x: (cx-offset.x)/zoom, y: (cy-offset.y)/zoom }; }
+function toCanvasFromImg(ix, iy){ return { x: ix*zoom+offset.x,   y: iy*zoom+offset.y   }; }
+function updateZoomLabel()      { document.getElementById('zoomLabel').textContent = Math.round(zoom*100)+'%'; }
+
+function setLoading(show, msg='正在加载…') { loadMsg.textContent=msg; loadOverlay.classList.toggle('show',show); }
+
+function fitToWrap(srcW, srcH) {
+  const maxW = wrap.clientWidth-2;
+  const maxH = Math.min(600, window.innerHeight*0.62);
+  zoom = Math.min(maxW/srcW, maxH/srcH, 1);
+  offset.x = (maxW - srcW*zoom)/2;
+  offset.y = (maxH - srcH*zoom)/2;
+  canvas.width  = maxW;
+  canvas.height = Math.max(srcH*zoom + offset.y*2, 320);
+  updateZoomLabel();
+}
+
+function lineIntersect(l1, l2) {
+  const dx1=l1.x2-l1.x1, dy1=l1.y2-l1.y1;
+  const dx2=l2.x2-l2.x1, dy2=l2.y2-l2.y1;
+  const d = dx1*dy2 - dy1*dx2;
+  if (Math.abs(d)<1e-10) return null;
+  const t = ((l2.x1-l1.x1)*dy2-(l2.y1-l1.y1)*dx2)/d;
+  return { x: l1.x1+t*dx1, y: l1.y1+t*dy1 };
+}
+
+function computeQuadAngles(l1, l2) {
+  const a1 = Math.atan2(l1.y2-l1.y1, l1.x2-l1.x1);
+  const a2 = Math.atan2(l2.y2-l2.y1, l2.x2-l2.x1);
+
+  let theta = Math.abs((a1-a2)*180/Math.PI);
+  if (theta > 180) theta = 360-theta;
+  if (theta > 90)  theta = 180-theta;
+
+  const acute = parseFloat(theta.toFixed(4));
+  const obtuse = parseFloat((180-theta).toFixed(4));
+  const mid = (a1+a2)/2;
+
+  return [
+    { deg: acute,  bisector: mid         },
+    { deg: obtuse, bisector: mid + Math.PI/2 },
+    { deg: acute,  bisector: mid + Math.PI   },
+    { deg: obtuse, bisector: mid - Math.PI/2 },
+  ];
+}
+
+function drawQuadAnnotation(l1, l2, quadIdx, alpha) {
+  const inter = lineIntersect(l1, l2);
+  if (!inter) return;
+  const cp  = toCanvasFromImg(inter.x, inter.y);
+  const qa  = quadAngles[quadIdx];
+
+  const halfRad = (qa.deg/2) * Math.PI/180;
+  const arcFrom = qa.bisector - halfRad;
+  const arcTo   = qa.bisector + halfRad;
+  const arcR    = 36;
+
+  const isSelected = (quadIdx === selectedQuad);
+  const arcColor   = isSelected ? 'rgba(255,255,80,1)' : `rgba(255,255,80,${alpha})`;
+  const dotColor   = isSelected ? 'rgba(255,255,80,1)' : `rgba(255,255,80,${alpha})`;
+
+  ctx.beginPath();
+  ctx.arc(cp.x, cp.y, arcR, arcFrom, arcTo, false);
+  ctx.strokeStyle = arcColor;
+  ctx.lineWidth   = isSelected ? 2.5 : 1.5;
+  ctx.setLineDash(isSelected ? [] : [4,3]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  if (quadIdx === 0) {
+    ctx.beginPath(); ctx.arc(cp.x, cp.y, 5, 0, Math.PI*2);
+    ctx.fillStyle = dotColor; ctx.fill();
+  }
+
+  const label    = qa.deg.toFixed(2) + '°';
+  const labelR   = arcR + 22;
+  const lx       = cp.x + Math.cos(qa.bisector) * labelR;
+  const ly       = cp.y + Math.sin(qa.bisector) * labelR;
+  const fontSize = Math.max(11, Math.min(20, 13*zoom));
+
+  ctx.font         = `${isSelected?'bold':'normal'} ${fontSize}px -apple-system,sans-serif`;
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+
+  const tw  = ctx.measureText(label).width;
+  const pad = { x:6, y:3 };
+  const bw  = tw + pad.x*2;
+  const bh  = fontSize + pad.y*2;
+  const rx  = 4;
+
+  ctx.globalAlpha = isSelected ? 1 : alpha;
+  ctx.fillStyle   = isSelected ? 'rgba(20,20,20,0.82)' : 'rgba(30,30,30,0.55)';
+  ctx.beginPath(); ctx.roundRect(lx-bw/2, ly-bh/2, bw, bh, rx); ctx.fill();
+
+  ctx.strokeStyle = isSelected ? 'rgba(255,255,80,0.9)' : 'rgba(255,255,80,0.45)';
+  ctx.lineWidth   = isSelected ? 1.2 : 0.8;
+  ctx.beginPath(); ctx.roundRect(lx-bw/2, ly-bh/2, bw, bh, rx); ctx.stroke();
+
+  ctx.fillStyle = isSelected ? '#ffff55' : 'rgba(255,255,140,0.85)';
+  ctx.fillText(label, lx, ly);
+  ctx.globalAlpha = 1;
+
+  ctx.textAlign    = 'left';
+  ctx.textBaseline = 'alphabetic';
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (img) ctx.drawImage(img, offset.x, offset.y, img.width*zoom, img.height*zoom);
+
+  const colors = ['#3b82f6','#f59e0b'];
+  lines.forEach((line, idx) => {
+    const c  = colors[idx];
+    const p1 = toCanvasFromImg(line.x1, line.y1);
+    const p2 = toCanvasFromImg(line.x2, line.y2);
+    ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y);
+    ctx.strokeStyle=c; ctx.lineWidth=2.5; ctx.setLineDash([]); ctx.stroke();
+    drawDot(p1.x, p1.y, c); drawDot(p2.x, p2.y, c);
+  });
+
+  if (currentLine) {
+    const p = toCanvasFromImg(currentLine.x1, currentLine.y1);
+    drawDot(p.x, p.y, colors[lines.length]||'#aaa');
+  }
+
+  if (lines.length === 2 && quadAngles) {
+    for (let i = 0; i < 4; i++) {
+      drawQuadAnnotation(lines[0], lines[1], i, 0.35);
+    }
+  }
+}
+
+function drawDot(x, y, color) {
+  ctx.beginPath(); ctx.arc(x,y,6,0,Math.PI*2);
+  ctx.fillStyle=color; ctx.fill();
+  ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.stroke();
+}
+
+function buildQuadPicker() {
+  const labels = ['角 A','角 B','角 C（=A）','角 D（=B）'];
+  quadBtns.innerHTML = '';
+  quadAngles.forEach((qa, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'quad-btn';
+    btn.innerHTML = `<span class="qdeg">${qa.deg.toFixed(2)}°</span><span class="qlabel">${labels[i]}</span>`;
+    btn.addEventListener('click', () => selectQuad(i));
+    quadBtns.appendChild(btn);
+  });
+  quadPicker.style.display = 'flex';
+}
+
+function selectQuad(i) {
+  selectedQuad = i;
+  quadBtns.querySelectorAll('.quad-btn').forEach((btn, idx) => {
+    btn.classList.toggle('selected', idx === i);
+  });
+  const qa = quadAngles[i];
+  document.getElementById('angleVal').textContent = qa.deg.toFixed(2);
+  document.getElementById('resultsBar').style.display = 'flex';
+  draw();
+}
+
+function onTwoLinesReady() {
+  const [l1, l2] = lines;
+  quadAngles   = computeQuadAngles(l1, l2);
+  selectedQuad = null;
+
+  const a1 = Math.atan2(l1.y2-l1.y1, l1.x2-l1.x1);
+  const a2 = Math.atan2(l2.y2-l2.y1, l2.x2-l2.x1);
+  const d1 = ((a1*180/Math.PI)%360+360)%360;
+  const d2 = ((a2*180/Math.PI)%360+360)%360;
+  document.getElementById('line1Val').textContent = d1.toFixed(1);
+  document.getElementById('line2Val').textContent = d2.toFixed(1);
+  document.getElementById('angleVal').textContent = '—';
+  document.getElementById('resultsBar').style.display = 'flex';
+
+  buildQuadPicker();
+  draw();
+}
+
+function resetAnnotations() {
+  lines=[]; currentLine=null; quadAngles=null; selectedQuad=null;
+  quadPicker.style.display='none';
+  quadBtns.innerHTML='';
+  document.getElementById('resultsBar').style.display='none';
+}
+
+function loadImage(file) {
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const image = new Image();
+    image.onload = () => {
+      img=image; pdfDoc=null;
+      resetAnnotations();
+      dropZone.style.display='none';
+      pageNav.style.display='none';
+      fitToWrap(img.width, img.height);
+      draw();
+    };
+    image.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function loadPDF(file) {
+  setLoading(true,'正在解析 PDF…');
+  dropZone.style.display='none';
+  try {
+    const buf = await file.arrayBuffer();
+    pdfDoc   = await pdfjsLib.getDocument({data:buf}).promise;
+    pdfTotal = pdfDoc.numPages; pdfPage=1; img=null;
+    resetAnnotations();
+    pageNav.style.display='flex';
+    await renderPDFPage(pdfPage);
+  } catch(err) { alert('PDF 加载失败：'+err.message); setLoading(false); }
+}
+
+async function renderPDFPage(pageNum) {
+  if (!pdfDoc) return;
+  setLoading(true,`正在渲染第 ${pageNum} 页…`);
+  try {
+    const page = await pdfDoc.getPage(pageNum);
+    const vp   = page.getViewport({scale:2.0});
+    const off  = document.createElement('canvas');
+    off.width=vp.width; off.height=vp.height;
+    await page.render({canvasContext:off.getContext('2d'),viewport:vp}).promise;
+    const image = new Image();
+    image.onload = () => {
+      img=image; resetAnnotations();
+      fitToWrap(img.width,img.height); draw();
+      setLoading(false); updatePageNav();
+    };
+    image.src = off.toDataURL();
+  } catch(err) { alert('页面渲染失败：'+err.message); setLoading(false); }
+}
+
+function updatePageNav() {
+  pageInfo.textContent=`第 ${pdfPage} / ${pdfTotal} 页`;
+  prevBtn.disabled=pdfPage<=1; nextBtn.disabled=pdfPage>=pdfTotal;
+}
+
+prevBtn.addEventListener('click',()=>{ if(pdfPage>1){pdfPage--;renderPDFPage(pdfPage);} });
+nextBtn.addEventListener('click',()=>{ if(pdfPage<pdfTotal){pdfPage++;renderPDFPage(pdfPage);} });
+
+canvas.addEventListener('click', e => {
+  if (!img || panning) return;
+  if (lines.length >= 2) return;
+  const cc = toCanvasCoords(e);
+  const ic = toImgCoords(cc.x, cc.y);
+  if (!currentLine) {
+    currentLine = {x1:ic.x, y1:ic.y};
+  } else {
+    currentLine.x2=ic.x; currentLine.y2=ic.y;
+    lines.push({...currentLine}); currentLine=null;
+    if (lines.length===2) onTwoLinesReady();
+    else draw();
+  }
+  draw();
+});
+
+canvas.addEventListener('mousemove', e => {
+  if (!img || !currentLine) return;
+  const cc=toCanvasCoords(e), ic=toImgCoords(cc.x,cc.y);
+  draw();
+  const p1=toCanvasFromImg(currentLine.x1,currentLine.y1), p2=toCanvasFromImg(ic.x,ic.y);
+  ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y);
+  ctx.strokeStyle=lines.length===0?'#3b82f6':'#f59e0b';
+  ctx.lineWidth=2; ctx.setLineDash([6,4]); ctx.stroke(); ctx.setLineDash([]);
+});
+
+canvas.addEventListener('mousedown', e => {
+  if (e.button===1||e.altKey) {
+    panning=true; panStart={x:e.clientX-offset.x, y:e.clientY-offset.y}; e.preventDefault();
+  }
+});
+window.addEventListener('mousemove', e => {
+  if (!panning) return;
+  offset.x=e.clientX-panStart.x; offset.y=e.clientY-panStart.y; draw();
+});
+window.addEventListener('mouseup', ()=>{ panning=false; });
+
+canvas.addEventListener('wheel', e => {
+  if (!img) return; e.preventDefault();
+  const cc=toCanvasCoords(e), pt=toImgCoords(cc.x,cc.y);
+  zoom=Math.max(0.1,Math.min(8,zoom*(e.deltaY<0?1.15:1/1.15)));
+  offset.x=cc.x-pt.x*zoom; offset.y=cc.y-pt.y*zoom;
+  updateZoomLabel(); draw();
+},{passive:false});
+
+document.getElementById('zoomInBtn').addEventListener('click',()=>{ zoom=Math.min(zoom*1.25,8); updateZoomLabel(); draw(); });
+document.getElementById('zoomOutBtn').addEventListener('click',()=>{ zoom=Math.max(zoom/1.25,0.1); updateZoomLabel(); draw(); });
+document.getElementById('zoomFitBtn').addEventListener('click',()=>{ if(img){fitToWrap(img.width,img.height);draw();} });
+
+function handleFile(file) {
+  if (!file) return;
+  if (file.type==='application/pdf'||file.name.toLowerCase().endsWith('.pdf')) loadPDF(file);
+  else if (file.type.startsWith('image/')) loadImage(file);
+  else alert('不支持的格式，请上传图片或 PDF。');
+}
+document.getElementById('uploadBtn').addEventListener('click',()=>fileInput.click());
+fileInput.addEventListener('change',e=>handleFile(e.target.files[0]));
+wrap.addEventListener('dragover',e=>{e.preventDefault();wrap.style.borderColor='#3b82f6';});
+wrap.addEventListener('dragleave',()=>{wrap.style.borderColor='';});
+wrap.addEventListener('drop',e=>{e.preventDefault();wrap.style.borderColor='';handleFile(e.dataTransfer.files[0]);});
+document.getElementById('clearBtn').addEventListener('click',()=>{ resetAnnotations(); draw(); });
+
+canvas.width=wrap.clientWidth||700; canvas.height=360;
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => console.log('Service Worker registered', reg))
+      .catch(err => console.error('Service Worker registration failed', err));
+  });
+}
+</script>
+</body>
+</html>

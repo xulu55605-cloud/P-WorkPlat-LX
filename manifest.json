@@ -1,0 +1,24 @@
+{
+  "name": "图片 / PDF 角度测量工具",
+  "short_name": "角度测量",
+  "description": "上传工程图、示意图或 PDF，点击画线，选择目标角，自动标注。",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f5f5f3",
+  "theme_color": "#1a5ccc",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
